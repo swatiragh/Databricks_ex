@@ -1,0 +1,99 @@
+
+ELT Sample: Azure Blob Stroage - Databricks - CosmosDB
+In this notebook, you extract data from Azure Blob Storage into Databricks cluster, run transformations on the data in Databricks cluster, and then load the transformed data into Azure Cosmos DB.
+
+prerequisites:
+Azure Blob Storage Account and Containers
+Databricks Cluster (Spark)
+Cosmos DB Spark Connector (azure-cosmosdb-spark)
+Create a library using maven coordinates. Simply typed in azure-cosmosdb-spark_2.2.0 in the search box and search it, or create library by simply uploading jar file that can be donwload from marven central repository
+Azure Cosmos DB Collection
+
+https://docs.azuredatabricks.net/spark/latest/data-sources/azure/azure-storage.html
+https://github.com/Azure/azure-cosmosdb-spark
+Connecting to Azure Blob Storage and access a sample Json file
+Set up an account access key
+
+# spark.conf.set(
+#  "fs.azure.account.key..blob.core.windows.net",
+#  "")
+
+spark.conf.set(
+  "fs.azure.account.key.databrickstore.blob.core.windows.net",
+  "S1PtMWvUw5If1Z8FMzXAxC7OMw9G5Go8BGCXJ81qpFVYpZ9dpXOnU4zlg0PbldKkbLIbmbv02WoJsgYLGKIfgg==")
+     
+Once an account access key or a SAS is set up in your notebook, you can use standard Spark and Databricks APIs to read from the storage account
+
+
+#dbutils.fs.ls("wasbs://@.blob.core.windows.net/")
+dbutils.fs.ls("wasbs://dbdemo01@databrickstore.blob.core.windows.net")
+     
+Mount a Blob storage container or a folder inside a container
+
+# Mount a Blob storage container or a folder inside a container
+# dbutils.fs.mount(
+#   source = "wasbs://@.blob.core.windows.net/",
+#   mount_point = "",
+#   extra_configs = <"": "">)
+# [note]  is a DBFS path and the path must be under /mnt
+
+dbutils.fs.mount(
+  source = "wasbs://dbdemo01@databrickstore.blob.core.windows.net",
+  mount_point = "/mnt/dbdemo01",
+  extra_configs = {"fs.azure.account.key.databrickstore.blob.core.windows.net": "S1PtMWvUw5If1Z8FMzXAxC7OMw9G5Go8BGCXJ81qpFVYpZ9dpXOnU4zlg0PbldKkbLIbmbv02WoJsgYLGKIfgg=="})
+
+     
+Access files in your container as if they were local files
+
+# Access files in your container as if they were local files
+# (TEXT) df = spark.read.text("/mnt/%s/...." % )
+# (JSON) df = spark.read.json("/mnt/%s/...." % )
+
+df = spark.read.json( "/mnt/%s/small_radio_json.json" % "dbdemo01" )
+
+# display(df)
+df.show()
+     
+Unmount the blob storage (if needed)
+
+# unmount (if needed)
+# dbutils.fs.unmount("")
+# dbutils.fs.unmount("/mnt/dbdemo01")
+     
+Transform data in Azure Databricks
+Start by retrieving only the columns firstName, lastName, gender, location, and level from the dataframe you already created.
+
+
+specificColumnsDf = df.select("firstname", "lastname", "gender", "location", "level")
+specificColumnsDf.show()
+     
+You can further transform this data to rename the column level to subscription_type.
+
+
+renamedColumnsDF = specificColumnsDf.withColumnRenamed("level", "subscription_type")
+renamedColumnsDF.show()
+     
+Load data into Azure Cosmos DB
+Write configuration, then write to Cosmos DB from the renamedColumnsDF DataFrame
+
+
+#writeConfig = {
+# "Endpoint" : "https://.documents.azure.com:443/",
+# "Masterkey" : "",
+# "Database" : "",
+# "Collection" : "",
+# "Upsert" : "true"
+#}
+
+# Write configuration
+writeConfig = {
+ "Endpoint" : "https://dbstreamdemo.documents.azure.com:443/",
+ "Masterkey" : "ekRLXkETPJ93s6XZz4YubZOw1mjSnoO5Bhz1Gk29bVxCbtgtKmiyRz4SogOSxLOGTouXbwlaAHcHOzct4JVwtQ==",
+ "Database" : "etl",
+ "Collection" : "outcol01",
+ "Upsert" : "true"
+}
+
+# Write to Cosmos DB from the renamedColumnsDF DataFrame
+renamedColumnsDF.write.format("com.microsoft.azure.cosmosdb.spark").options(**writeConfig).save()
+     
